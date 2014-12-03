@@ -402,7 +402,7 @@ let op_to_s typ opcode =
   (typ_prefix typ) ^ match opcode with
     | Sum -> "add"
     | Sub -> "sub"
-    | Mult -> "mult"
+    | Mult -> "mul"
     | Div -> "div"
     | Neg -> "inv"
     | Eq -> "eq"
@@ -415,32 +415,10 @@ let addlabel block label =
   | [] -> [[label^":"]]
   | l::t -> ((label^":")::l)::t
 
-let rec intermed_code_branch_expr co l0 l1 e =
-  match e with
-  | BoolLit "true" ->[["jump"; l0]]
-  | BoolLit "false" -> [["jump"; l1]]
-  | Operation(Not, [a0], _) -> intermed_code_branch_expr co l1 l0 a0
-  | Operation(And, [a0; a1], _) ->
-    let l2 = getlabel co in
-    let b0 = intermed_code_branch_expr co l2 l1 a0 in
-    let b1 = intermed_code_branch_expr co l0 l1 a1 in
-    b0 @ (addlabel b1 l2)
-  | Operation(Or, [a0; a1], _) ->
-    let l2 = getlabel co in
-    let b0 = intermed_code_branch_expr co l0 l2 a0 in
-    let b1 = intermed_code_branch_expr co l0 l1 a1 in
-    b0 @ (addlabel b1 l2)
-  | Operation(Lte, [a0; a1], _) ->
-    intermed_code_branch_expr co l1 l0 (Operation(Lt, [a1; a0], Bool))
-  | Operation(Gte, [a0; a1], _) ->
-    intermed_code_branch_expr co l1 l0 (Operation(Lt, [a0; a1], Bool))
-  | _ ->
-    let reg = getreg_t co in
-    let b0 = intermed_code_expr co reg e in
-    b0 @ [["cjump"; comma_sep [reg; l0; l1]]]
 
 
-and intermed_code_expr co reg e =
+
+let rec intermed_code_expr co reg e =
   let arg_list args = List.map (fun e ->
     let reg = getreg co (expr_type e) in
     (reg, intermed_code_expr co reg e)
@@ -503,6 +481,30 @@ and intermed_code_expr co reg e =
     let b1 = addlabel (intermed_code_expr co reg a1) l0 in
     b0 @ [["cjump"; comma_sep [reg; l1; l0]]] @ b1 @ (addlabel [] l1)
   | _ -> failwith "unsupoorted expression"
+
+let rec intermed_code_branch_expr co l0 l1 e =
+  match e with
+  | BoolLit "true" ->[["jump"; l0]]
+  | BoolLit "false" -> [["jump"; l1]]
+  | Operation(Not, [a0], _) -> intermed_code_branch_expr co l1 l0 a0
+  | Operation(And, [a0; a1], _) ->
+  let l2 = getlabel co in
+  let b0 = intermed_code_branch_expr co l2 l1 a0 in
+  let b1 = intermed_code_branch_expr co l0 l1 a1 in
+  b0 @ (addlabel b1 l2)
+  | Operation(Or, [a0; a1], _) ->
+  let l2 = getlabel co in
+  let b0 = intermed_code_branch_expr co l0 l2 a0 in
+  let b1 = intermed_code_branch_expr co l0 l1 a1 in
+  b0 @ (addlabel b1 l2)
+  | Operation(Lte, [a0; a1], _) ->
+  intermed_code_branch_expr co l1 l0 (Operation(Lt, [a1; a0], Bool))
+  | Operation(Gte, [a0; a1], _) ->
+  intermed_code_branch_expr co l1 l0 (Operation(Lt, [a0; a1], Bool))
+  | _ ->
+  let reg = getreg_t co in
+  let b0 = intermed_code_expr co reg e in
+  b0 @ [["cjump"; comma_sep [reg; l0; l1]]]
 
 let rec intermed_code_stmt co s =
   match s with
