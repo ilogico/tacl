@@ -3,7 +3,9 @@
 }
 
 rule token = parse
+  | '#'[^'\n']* { token lexbuf }
   | ['\t''\n'' ''\r']+ { token lexbuf }
+  | eof { EOF }
   | "fun" { FUN }
   | "proc" { PROC }
   | "while" { WHILE }
@@ -40,4 +42,3 @@ rule token = parse
   | '[' { LBRACKET }
   | ']' { RBRACKET }
   | '^' { RET }
-  | eof { EOF }

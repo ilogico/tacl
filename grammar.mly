@@ -191,5 +191,5 @@ unmatched_stmt:
 ;
 
 pseudo_instruction
-  : RET expr SEMICOLON { $2 }
+  : RET expr { $2 }
 ;

@@ -5,7 +5,7 @@ fun int main(int x)[
     print coisas(96, 98, y);
     i = i + 5;
   ]
-  ^ cenas();
+  ^ cenas()
 ]
 
 proc print_stuff(int n)[
@@ -15,7 +15,7 @@ proc print_stuff(int n)[
   ]
 ]
 fun int coisas(int b)[
-  ^ if (b == 3) 2 else 5;
+  ^ if (b == 3) 2 else 5
 ]
 
 fun int fact(int n) = if (n < 2) 1 else n * fact(n-1);

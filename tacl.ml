@@ -387,7 +387,7 @@ let getreg_fp co = let {fp;_} = co in co.fp <- fp + 1; "fp" ^(string_of_int fp)
 let getlabel co = let {l;_} = co in co.l <- l + 1; "l" ^(string_of_int l)
 let getreg co typ = if typ = Real then getreg_fp co else getreg_t co
 
-let typ_prefix typ = if typ = Real then "fp_" else "i_"
+let typ_prefix typ = if typ = Real then "r_" else "i_"
 let loc_prefix = function
   | Var -> ""
   | Local -> "l"
@@ -400,7 +400,7 @@ let rec comma_sep = function
 
 let op_to_s typ opcode =
   (typ_prefix typ) ^ match opcode with
-    | Sum -> "sum"
+    | Sum -> "add"
     | Sub -> "sub"
     | Mult -> "mult"
     | Div -> "div"
@@ -415,7 +415,32 @@ let addlabel block label =
   | [] -> [[label^":"]]
   | l::t -> ((label^":")::l)::t
 
-let rec intermed_code_expr co reg e =
+let rec intermed_code_branch_expr co l0 l1 e =
+  match e with
+  | BoolLit "true" ->[["jump"; l0]]
+  | BoolLit "false" -> [["jump"; l1]]
+  | Operation(Not, [a0], _) -> intermed_code_branch_expr co l1 l0 a0
+  | Operation(And, [a0; a1], _) ->
+    let l2 = getlabel co in
+    let b0 = intermed_code_branch_expr co l2 l1 a0 in
+    let b1 = intermed_code_branch_expr co l0 l1 a1 in
+    b0 @ (addlabel b1 l2)
+  | Operation(Or, [a0; a1], _) ->
+    let l2 = getlabel co in
+    let b0 = intermed_code_branch_expr co l0 l2 a0 in
+    let b1 = intermed_code_branch_expr co l0 l1 a1 in
+    b0 @ (addlabel b1 l2)
+  | Operation(Lte, [a0; a1], _) ->
+    intermed_code_branch_expr co l1 l0 (Operation(Lt, [a1; a0], Bool))
+  | Operation(Gte, [a0; a1], _) ->
+    intermed_code_branch_expr co l1 l0 (Operation(Lt, [a0; a1], Bool))
+  | _ ->
+    let reg = getreg_t co in
+    let b0 = intermed_code_expr co reg e in
+    b0 @ [["cjump"; comma_sep [reg; l0; l1]]]
+
+
+and intermed_code_expr co reg e =
   let arg_list args = List.map (fun e ->
     let reg = getreg co (expr_type e) in
     (reg, intermed_code_expr co reg e)
@@ -486,30 +511,27 @@ let rec intermed_code_stmt co s =
     let block = intermed_code_expr co reg e in
     block @ [["@"^name; "<-"; (typ_prefix typ)^(loc_prefix loc)^"store"; reg]]
   | IfStmt(c, s0, s1) ->
-    let reg = getreg_t co in
-    let c_block = intermed_code_expr co reg c in
     let (l0, l1, l2) = (getlabel co, getlabel co, getlabel co) in
+    let c_block = intermed_code_branch_expr co l0 l1 c in
     let b0 = addlabel (intermed_code_stmt co s0) l0 in
     let b1 = addlabel (intermed_code_stmt co s1) l1 in
-    c_block @ [["cjump"; comma_sep [reg; l0; l1]]] @
-    b0 @ [["jump"; l2]] @ b1 @ (addlabel [] l2)
+    c_block @ b0 @ [["jump"; l2]] @ b1 @ (addlabel [] l2)
   | WhileStmt(c, s0) ->
-    let reg = getreg_t co in
     let (l0, l1, l2) = (getlabel co, getlabel co, getlabel co) in
-    let c_block = addlabel (intermed_code_expr co reg c) l0 in
+    let c_block = addlabel (intermed_code_branch_expr co l1 l2 c) l0 in
     let b0 = addlabel (intermed_code_stmt co s0) l1 in
-    c_block @ [["cjump"; comma_sep [reg; l1; l2]]] @
-    b0 @ [["jump"; l0]] @ (addlabel [] l2)
+    c_block @ b0 @ [["jump"; l0]] @ (addlabel [] l2)
   | BlockStmt(ss) ->
     ss |> List.map (intermed_code_stmt co) |> List.fold_left (@) []
   | PrintStmt(e) ->
     let typ = expr_type e in
     let reg = getreg co typ in
+    let b0 = intermed_code_expr co reg e in
     let prefix = match typ with
       | Bool -> "b_"
       | _ -> typ_prefix typ
     in
-    [[prefix ^ "print"; reg]]
+    b0 @ [[prefix ^ "print"; reg]]
   | ProcCall(name, args) ->
     let arg_list args = List.map (fun e ->
       let reg = getreg co (expr_type e) in
@@ -533,7 +555,7 @@ let intermed_code_fun = function
     let ins0 = intermed_code_stmt ctxt (BlockStmt body) in
     let reg = getreg ctxt rtype in
     let ins1 = intermed_code_expr ctxt reg ret_expr in
-    let ins2 = [[(typ_prefix rtype) ^ "ret"; reg]] in
+    let ins2 = [[(typ_prefix rtype) ^ "return"; reg]] in
     "\nfunction @" ^ fun_name ^ "\n" ^ (ins_to_s (ins0 @ ins1 @ ins2)) ^ "\n"
   | _ -> failwith "can't generate code for this"
 
